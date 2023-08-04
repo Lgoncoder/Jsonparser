@@ -1,53 +1,86 @@
 import os
 import csv
-import numpy as np
+from statistics import variance
 
-network_location = '//NASWDC/Data/Betfair/Soccer/Test'
-output_file = 'output.txt'
-variance_threshold = 0.05
 
-def calculate_averages(values):
-    if len(values) == 0:
-        return None
-    return sum(values) / len(values)
+def find_best_average(values):
+    while len(values) > 1:
+        avg = sum(values) / len(values)
+        var = variance(values)
+        if var < 0.05:
+            return avg
+        else:
+            values = values[1:]
+    return values[0]
 
-def process_file(file_path):
-    event_data = {
-        'eventId': None,
-        'eventName': None,
-        'back_P0': [],
-        'lay_P0': []
-    }
 
-    with open(file_path, 'r') as file:
-        csv_reader = csv.DictReader(file)
-        for i, row in enumerate(csv_reader):
-            if row['SelectionId'] == '1096':
-                if row['Inplay'] == 'True':
-                    event_data['back_P0'].append(float(row['back_P0']))
-                    event_data['lay_P0'].append(float(row['lay_P0']))
+def process_files(hs_file_directory, output_file_path):
+    fieldnames = ['CS_File', 'eventId', 'EventName', 'SelectionId', 'Back_P0_Average', 'Lay_P0_Average']
 
-            if i >= 10:
-                break
+    # Create the output file directory if it does not exist
+    output_directory = os.path.dirname(output_file_path)
+    if not os.path.exists(output_directory):
+        os.makedirs(output_directory)
 
-    return event_data
+    # Open the output file in 'write' mode
+    with open(output_file_path, 'w', newline='') as outfile:
+        csv_writer = csv.writer(outfile)
+        csv_writer.writerow(fieldnames)
+
+        for filename in os.listdir(hs_file_directory):
+            cs_file_path = os.path.join(hs_file_directory, filename)
+            events = []
+
+            with open(cs_file_path, newline='') as cs_file:
+                reader = csv.DictReader(cs_file)
+                events = list(reader)
+
+                inplay_events = []
+                odds_found = 0
+
+                for event in events:
+                    if event.get('Inplay') == 'True' and event.get('SelectionId') == '1096':
+                        back_P0 = event.get('back_P0')
+                        lay_P0 = event.get('lay_P0')
+
+                        if back_P0 and lay_P0:
+                            odds_found += 1
+                            inplay_events.append({'back_P0': float(back_P0), 'lay_P0': float(lay_P0)})
+
+                        if odds_found == 10:
+                            break
+
+                if odds_found == 10:
+                    # Calculate the average for back_P0 and lay_P0
+                    back_P0_values = [event['back_P0'] for event in inplay_events]
+                    lay_P0_values = [event['lay_P0'] for event in inplay_events]
+                    back_P0_average = round(find_best_average(back_P0_values), 2)
+                    lay_P0_average = round(find_best_average(lay_P0_values), 2)
+
+                    # Write the row to the output file and flush the buffer
+                    row_data = [row['CS_File'], row['eventId'], row['EventName']]
+                    for i in range(10):
+                        if i < len(back_P0_values):
+                            row_data.append(back_P0_values[i])
+                            row_data.append(lay_P0_values[i])
+                        else:
+                            row_data.append('')
+                            row_data.append('')
+                    row_data.extend([back_P0_average, lay_P0_average])
+                    csv_writer.writerow(row_data)
+                    outfile.flush()
+
+                print(f"Processed event: {row['EventName']}")
+
+        print("All events have been processed and saved to the CSV file.")
+
 
 def main():
-    with open(output_file, 'w') as output:
-        output.write('File_Name,eventId,EventName,back_P0_1,lay_P0_1,back_P0_2,lay_P0_2,back_P0_3,lay_P0_3,back_P0_4,lay_P0_4,back_P0_5,lay_P0_5,back_P0_6,lay_P0_6,back_P0_7,lay_P0_7,back_P0_8,lay_P0_8,back_P0_9,lay_P0_9,back_P0_10,lay_P0_10\n')
+    hs_file_directory = '//NASWDC/Data/Betfair/Soccer/Test'
+    output_file_path = os.path.join(hs_file_directory, 'Odds_HS_output_filtered.csv')
 
-        for file_name in os.listdir(network_location):
-            if file_name.startswith('CS') and file_name.endswith('.txt'):
-                file_path = os.path.join(network_location, file_name)
-                event_data = process_file(file_path)
+    process_files(hs_file_directory, output_file_path)
 
-                if len(event_data['back_P0']) > 0 and len(event_data['lay_P0']) > 0:
-                    avg_back_P0 = calculate_averages(event_data['back_P0'])
-                    avg_lay_P0 = calculate_averages(event_data['lay_P0'])
-                    output.write(f"{file_name},{event_data['eventId']},{event_data['eventName']},")
-                    output.write(','.join(str(value) for value in event_data['back_P0']) + ',')
-                    output.write(','.join(str(value) for value in event_data['lay_P0']) + ',')
-                    output.write(f"{avg_back_P0},{avg_lay_P0}\n")
 
 if __name__ == "__main__":
     main()
