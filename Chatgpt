@@ -1,95 +1,80 @@
 import os
 import csv
-import numpy as np
+from collections import defaultdict
 
-network_location = '//NASWDC/Data/Betfair/Soccer/Test'
-output_file = 'output.csv'
-variance_threshold = 0.05
+def create_folder_if_not_exists(folder):
+    if not os.path.exists(folder):
+        os.makedirs(folder)
 
-def calculate_averages(values):
-    if len(values) == 0:
-        return None
-    return sum(values) / len(values)
+def process_files(data_path, output_file_path):
+    # Create a dictionary to store the TradedVolume for each SelectionId in each file
+    selection_ids_data = defaultdict(lambda: defaultdict(float))
 
-def process_file(file_path):
-    print(f"Processing file: {file_path}")
-    event_data = {
-        'CS_File': None,
-        'eventId': None,
-        'EventName': None,
-        'SelectionId': None,
-        'Back_P0': [],
-        'Lay_P0': []
-    }
+    # Loop through each file in the directory
+    for filename in os.listdir(data_path):
+        file_path = os.path.join(data_path, filename)
 
-    with open(file_path, 'r') as file:
-        csv_reader = csv.DictReader(file)
-        for i, row in enumerate(csv_reader):
-            if row['SelectionId'] == '1096':
-                if row['Inplay'] == 'True':
-                    event_data['Back_P0'].append(float(row['back_P0']))
-                    event_data['Lay_P0'].append(float(row['lay_P0']))
+        # Skip directories and only process text files
+        if not os.path.isfile(file_path) or not filename.endswith('.txt'):
+            continue
 
-            if i >= 10:
-                break
+        # Read the text file
+        with open(file_path, 'r') as file:
+            lines = file.readlines()
 
-    return event_data
+            # Get the header line and split it to get the field names
+            header_line = lines[0].strip()
+            fieldnames = header_line.split(',')
 
-def write_output(output_data):
-    try:
-        with open(output_file, 'w', newline='') as output:
-            fieldnames = ['CS_File', 'eventId', 'EventName', 'SelectionId', 'Back_P0_Average', 'Lay_P0_Average']
-            writer = csv.DictWriter(output, fieldnames=fieldnames)
-            writer.writeheader()
-            for data in output_data:
-                avg_back_P0 = calculate_averages(data['Back_P0'])
-                avg_lay_P0 = calculate_averages(data['Lay_P0'])
-                writer.writerow({
-                    'CS_File': data['CS_File'],
-                    'eventId': data['eventId'],
-                    'EventName': data['EventName'],
-                    'SelectionId': '1096',
-                    'Back_P0_Average': avg_back_P0,
-                    'Lay_P0_Average': avg_lay_P0,
-                })
-    except Exception as e:
-        print(f"Error writing to output file: {e}")
+            for line in lines[1:]:
+                line = line.strip()
+                fields = line.split(',')
+
+                selection_id_index = fieldnames.index('SelectionId')
+                inplay_index = fieldnames.index('Inplay')
+                traded_volume_index = fieldnames.index('TradedVolume')
+                event_id_index = fieldnames.index('eventId')
+                event_name_index = fieldnames.index('eventName')
+
+                selection_id = fields[selection_id_index]
+                inplay = fields[inplay_index]
+                traded_volume = float(fields[traded_volume_index])
+                event_id = fields[event_id_index]
+                event_name = fields[event_name_index]
+
+                # Check if Inplay is False and add the TradedVolume to the corresponding SelectionId
+                if inplay == 'False':
+                    selection_ids_data[filename][selection_id] += traded_volume
+                    # Store eventId and eventName for each file (assuming they are the same for all rows in the file)
+                    selection_ids_data[filename]['eventId'] = event_id
+                    selection_ids_data[filename]['eventName'] = event_name
+
+        print(f"Processed file: {filename}")
+
+    # Write the data to the output file
+    with open(output_file_path, 'w', newline='') as outfile:
+        csv_writer = csv.writer(outfile)
+
+        # Write the header row
+        header = ['eventId', 'eventName', 'FileName'] + sorted(set(selection_ids_data[filename].keys()) - {'eventId', 'eventName'})
+        csv_writer.writerow(header)
+
+        # Write the data rows
+        for filename, selection_data in selection_ids_data.items():
+            event_id = selection_data['eventId']
+            event_name = selection_data['eventName']
+            file_data = [event_id, event_name, filename]
+            for selection_id in sorted(set(selection_data.keys()) - {'eventId', 'eventName'}):
+                file_data.append(str(selection_data[selection_id]))
+            csv_writer.writerow(file_data)
+
+    print("All files have been processed and saved to the CSV file.")
 
 def main():
-    output_data = []
+    network_location = '//NASWDC/Data/Betfair/Soccer/MO'
+    output_file_path = os.path.join(network_location, 'ALL_outputMO_tradedVolume.csv')
 
-    for file_name in os.listdir(network_location):
-        if file_name.startswith('CS') and file_name.endswith('.txt'):
-            file_path = os.path.join(network_location, file_name)
-            event_data = process_file(file_path)
+    process_files(network_location, output_file_path)
 
-            print(event_data)  # Add this line to check the data after processing
-
-            if len(event_data['Back_P0']) >= 10 and len(event_data['Lay_P0']) >= 10:
-                while np.var(event_data['Back_P0']) >= variance_threshold or np.var(event_data['Lay_P0']) >= variance_threshold:
-                    event_data['Back_P0'].pop(0)
-                    event_data['Lay_P0'].pop(0)
-
-                event_data['CS_File'] = file_name
-                output_data.append(event_data)
-
-    # Print the output data before writing to the file
-    print(output_data)
-
-    # Example: Adding dummy data to output_data
-    output_data.append({
-        'CS_File': 'dummy_file.txt',
-        'eventId': 'dummy_event_id',
-        'EventName': 'Dummy Event',
-        'SelectionId': '1096',
-        'Back_P0': [1.0, 2.0, 3.0, 4.0, 5.0],
-        'Lay_P0': [2.0, 3.0, 4.0, 5.0, 6.0]
-    })
-
-    try:
-        write_output(output_data)
-    except Exception as e:
-        print(f"Error writing output file: {e}")
-
-    if __name__ == "__main__":
-        main()
+if __name__ == "__main__":
+    main()
