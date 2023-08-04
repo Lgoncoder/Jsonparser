@@ -1,0 +1,231 @@
+import logging
+import pandas as pd
+from pathlib import Path
+import betfairlightweight
+from betfairlightweight import StreamListener
+from betfairlightweight.streaming.stream import MarketStream
+from glob import glob
+import os
+import json
+import shutil
+
+
+p = Path(r'C:/Users/luisg/PycharmProjects/BetfairHistoricalDataStreaming/Data/allfiles/allevents')
+filenames = p.glob('*.*')
+
+for f in filenames:
+
+    """
+    Data needs to be downloaded from:
+        https://historicdata.betfair.com
+    """
+
+    # setup logging
+    logging.basicConfig(level=logging.INFO)
+
+    # create trading instance (no need to put in correct details)
+    trading = betfairlightweight.APIClient('username', 'password')
+
+
+    class HistoricalStream(MarketStream):
+        # create custom listener and stream
+
+        def __init__(self, listener):
+            super(HistoricalStream, self).__init__(listener)
+            with open('C:/Users/luisg/PycharmProjects/BetfairHistoricalDataStreaming/Data/allfiles/allevents/output.txt', 'w') as output:
+                output.write('Time,MarketId,Status,Inplay,SelectionId,RunnerStatus,LastPriceTraded,TradedVolume\n')
+
+        def on_process(self, market_books):
+            with open('C:/Users/luisg/PycharmProjects/BetfairHistoricalDataStreaming/Data/allfiles/allevents/output.txt', 'a') as output:
+                for market_book in market_books:
+                    for runner in market_book.runners:
+
+                        # how to get runner details from the market definition
+                        market_def = market_book.market_definition
+                        runners_dict = {(runner.selection_id, runner.handicap): runner for runner in market_def.runners}
+                        runner_def = runners_dict.get(
+                            (runner.selection_id, runner.status)
+                        )
+
+                        output.write('%s,%s,%s,%s,%s,%s,%s,%s\n' % (
+                            market_book.publish_time, market_book.market_id, market_book.status, market_book.inplay,
+                            runner.selection_id, runner.status, runner.last_price_traded, runner.total_matched or ''
+                        ))
+
+    class HistoricalListener(StreamListener):
+        def _add_stream(self, unique_id, stream_type):
+            if stream_type == 'marketSubscription':
+                return HistoricalStream(self)
+
+
+    # create listener
+    listener = HistoricalListener(
+        max_latency=1e100
+    )
+
+    # create historical stream, update directory to file location
+    stream = trading.streaming.create_historical_stream(
+        directory=f,
+        listener=listener
+    )
+
+    # start stream
+    # stream.start(async_=False)
+    stream.start()
+
+    with open(f, 'r') as file:
+        first_line = file.readline()
+        for last_line in file:
+            pass
+
+    # print(first_line)
+
+    data = json.loads(first_line)
+
+    if data['mc'][0]['marketDefinition']['marketType'] == 'MATCH_ODDS':
+        home = data['mc'][0]['marketDefinition']['runners'][0]['id']
+        away = data['mc'][0]['marketDefinition']['runners'][1]['id']
+        eventId = data['mc'][0]['marketDefinition']['eventId']
+        marketId = data['mc'][0]['id']
+        marketName = data['mc'][0]['marketDefinition']['name']
+        openDate = data['mc'][0]['marketDefinition']['openDate']
+        eventName = data['mc'][0]['marketDefinition']['eventName']
+        timezone = data['mc'][0]['marketDefinition']['timezone']
+        # country = data['mc'][0]['marketDefinition']['countryCode']
+        try:
+            country = data['mc'][0]['marketDefinition']['countryCode']
+        except:
+            country = 'NA'
+        df = pd.read_csv('C:/Users/luisg/PycharmProjects/BetfairHistoricalDataStreaming/Data/allfiles/allevents/output.txt')
+        df.SelectionId.replace(home, '1096', inplace=True)
+        df.SelectionId.replace(away, 48351, inplace=True)
+        df['eventId'] = eventId
+        df['eventName'] = eventName
+        df['marketId'] = marketId
+        df['marketName'] = marketName
+        df['openDate'] = openDate
+        df['country'] = country
+        df['timezone'] = timezone
+
+        # if df.marketName[1] == 'Match Odds':
+        term = "MO"
+
+        df.to_csv('C:/Users/luisg/PycharmProjects/BetfairHistoricalDataStreaming/Data/allfiles/allevents/output.txt', index=False)
+
+        # Saves file with the same original name
+        s_temp = os.path.splitext(f)[1]
+        saux = s_temp[1:]
+        s = term + saux
+        os.rename(r'C:/Users/luisg/PycharmProjects/BetfairHistoricalDataStreaming/Data/allfiles/allevents/output.txt',
+                  r'C:/Users/luisg/PycharmProjects/BetfairHistoricalDataStreaming/Data/allfiles/allevents/%s.txt' % s)
+
+    elif data['mc'][0]['marketDefinition']['marketType'] == 'CORRECT_SCORE':
+        home = data['mc'][0]['marketDefinition']['runners'][0]['id']
+        away = data['mc'][0]['marketDefinition']['runners'][1]['id']
+        eventId = data['mc'][0]['marketDefinition']['eventId']
+        marketId = data['mc'][0]['id']
+        marketName = data['mc'][0]['marketDefinition']['name']
+        openDate = data['mc'][0]['marketDefinition']['openDate']
+        eventName = data['mc'][0]['marketDefinition']['eventName']
+        try:
+            country = data['mc'][0]['marketDefinition']['countryCode']
+        except:
+            country = 'NA'
+        timezone = data['mc'][0]['marketDefinition']['timezone']
+
+
+        df = pd.read_csv('C:/Users/luisg/PycharmProjects/BetfairHistoricalDataStreaming/Data/allfiles/allevents/output.txt')
+        df.SelectionId.replace(home, '1096', inplace=True)
+        df.SelectionId.replace(away, 48351, inplace=True)
+        df['eventId'] = eventId
+        df['eventName'] = eventName
+        df['marketId'] = marketId
+        df['marketName'] = marketName
+        df['openDate'] = openDate
+        df['country'] = country
+        df['timezone'] = timezone
+
+        term = "CS"
+
+        df.to_csv('C:/Users/luisg/PycharmProjects/BetfairHistoricalDataStreaming/Data/allfiles/allevents/output.txt', index=False)
+
+        # Saves file with the same original name
+        s_temp = os.path.splitext(f)[1]
+        saux = s_temp[1:]
+        s = term + saux
+        os.rename(r'C:/Users/luisg/PycharmProjects/BetfairHistoricalDataStreaming/Data/allfiles/allevents/output.txt',
+                  r'C:/Users/luisg/PycharmProjects/BetfairHistoricalDataStreaming/Data/allfiles/allevents/%s.txt' % s)
+
+    elif data['mc'][0]['marketDefinition']['marketType'] == 'HALF_TIME_SCORE':
+        home = data['mc'][0]['marketDefinition']['runners'][0]['id']
+        away = data['mc'][0]['marketDefinition']['runners'][1]['id']
+        eventId = data['mc'][0]['marketDefinition']['eventId']
+        marketId = data['mc'][0]['id']
+        marketName = data['mc'][0]['marketDefinition']['name']
+        openDate = data['mc'][0]['marketDefinition']['openDate']
+        eventName = data['mc'][0]['marketDefinition']['eventName']
+        try:
+            country = data['mc'][0]['marketDefinition']['countryCode']
+        except:
+            country = 'NA'
+        timezone = data['mc'][0]['marketDefinition']['timezone']
+
+        df = pd.read_csv('C:/Users/luisg/PycharmProjects/BetfairHistoricalDataStreaming/Data/allfiles/allevents/output.txt')
+        df.SelectionId.replace(home, '1096', inplace=True)
+        df.SelectionId.replace(away, 48351, inplace=True)
+        df['eventId'] = eventId
+        df['eventName'] = eventName
+        df['marketId'] = marketId
+        df['marketName'] = marketName
+        df['openDate'] = openDate
+        df['country'] = country
+        df['timezone'] = timezone
+
+        term = "HS"
+
+        df.to_csv('C:/Users/luisg/PycharmProjects/BetfairHistoricalDataStreaming/Data/allfiles/allevents/output.txt', index=False)
+
+        # Saves file with the same original name
+        s_temp = os.path.splitext(f)[1]
+        saux = s_temp[1:]
+        s = term + saux
+        os.rename(r'C:/Users/luisg/PycharmProjects/BetfairHistoricalDataStreaming/Data/allfiles/allevents/output.txt',
+                  r'C:/Users/luisg/PycharmProjects/BetfairHistoricalDataStreaming/Data/allfiles/allevents/%s.txt' % s)
+
+    elif data['mc'][0]['marketDefinition']['marketType'] == 'HALF_TIME':
+        home = data['mc'][0]['marketDefinition']['runners'][0]['id']
+        away = data['mc'][0]['marketDefinition']['runners'][1]['id']
+        eventId = data['mc'][0]['marketDefinition']['eventId']
+        marketId = data['mc'][0]['id']
+        marketName = data['mc'][0]['marketDefinition']['name']
+        openDate = data['mc'][0]['marketDefinition']['openDate']
+        eventName = data['mc'][0]['marketDefinition']['eventName']
+        try:
+            country = data['mc'][0]['marketDefinition']['countryCode']
+        except:
+            country = 'NA'
+        timezone = data['mc'][0]['marketDefinition']['timezone']
+
+
+        df = pd.read_csv('C:/Users/luisg/PycharmProjects/BetfairHistoricalDataStreaming/Data/allfiles/allevents/output.txt')
+        df.SelectionId.replace(home, '1096', inplace=True)
+        df.SelectionId.replace(away, 48351, inplace=True)
+        df['eventId'] = eventId
+        df['eventName'] = eventName
+        df['marketId'] = marketId
+        df['marketName'] = marketName
+        df['openDate'] = openDate
+        df['country'] = country
+        df['timezone'] = timezone
+
+        term = "HT"
+
+        df.to_csv('C:/Users/luisg/PycharmProjects/BetfairHistoricalDataStreaming/Data/allfiles/allevents/output.txt', index=False)
+
+        # Saves file with the same original name
+        s_temp = os.path.splitext(f)[1]
+        saux = s_temp[1:]
+        s = term + saux
+        os.rename(r'C:/Users/luisg/PycharmProjects/BetfairHistoricalDataStreaming/Data/allfiles/allevents/output.txt',
+                  r'C:/Users/luisg/PycharmProjects/BetfairHistoricalDataStreaming/Data/allfiles/allevents/%s.txt' % s)
+
