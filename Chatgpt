@@ -1,5 +1,6 @@
 import os
 import csv
+from collections import defaultdict
 from statistics import variance
 
 
@@ -13,9 +14,8 @@ def find_best_average(values):
             values = values[1:]
     return values[0]
 
-
-def process_csv_file(csv_file_directory, hs_file_directory, output_file_path):
-    fieldnames = ['CS_File', 'eventId', 'EventName']
+def process_txt_files(network_location, output_file_path):
+    fieldnames = ['File_Name', 'eventId', 'EventName']
     for i in range(1, 11):
         fieldnames.extend([f'back_P0_{i}', f'lay_P0_{i}'])
 
@@ -24,16 +24,26 @@ def process_csv_file(csv_file_directory, hs_file_directory, output_file_path):
         csv_writer = csv.writer(outfile)
         csv_writer.writerow(fieldnames)
 
-        with open(csv_file_directory, newline='') as csvfile:
-            csv_reader = csv.DictReader(csvfile)
-
-            for row in csv_reader:
-                cs_file_path = os.path.join(hs_file_directory, row['HS_File'])
+        # Iterate through all files in the network directory
+        for filename in os.listdir(network_location):
+            if filename.endswith('.txt'):
+                txt_file_path = os.path.join(network_location, filename)
+                hs_file_directory = 'path_to_hs_files_directory'  # Replace this with the correct directory path for HS files
                 events = []
 
-                with open(cs_file_path, newline='') as cs_file:
-                    reader = csv.DictReader(cs_file)
-                    events = list(reader)
+                with open(txt_file_path, 'r') as txtfile:
+                    for line in txtfile:
+                        event_data = line.strip().split(',')
+                        event = {
+                            'File_Name': filename,
+                            'eventId': event_data[0],
+                            'EventName': event_data[1],
+                            'back_P0': event_data[2],
+                            'lay_P0': event_data[3],
+                            'Inplay': event_data[4],
+                            # Add other fields as needed based on your txt file format
+                        }
+                        events.append(event)
 
                 inplay_events = []
                 odds_found = 0
@@ -54,11 +64,11 @@ def process_csv_file(csv_file_directory, hs_file_directory, output_file_path):
                     # Calculate the average for back_P0 and lay_P0
                     back_P0_values = [event['back_P0'] for event in inplay_events]
                     lay_P0_values = [event['lay_P0'] for event in inplay_events]
-                    back_P0_average = round(find_best_average(back_P0_values), 2)
-                    lay_P0_average = round(find_best_average(lay_P0_values), 2)
+                    back_P0_average = round(sum(back_P0_values) / len(back_P0_values), 2)
+                    lay_P0_average = round(sum(lay_P0_values) / len(lay_P0_values), 2)
 
                     # Write the row to the output file and flush the buffer
-                    row_data = [row['CS_File'], row['eventId'], row['EventName']]
+                    row_data = [filename, events[0]['eventId'], events[0]['EventName']]
                     for i in range(10):
                         if i < len(back_P0_values):
                             row_data.append(back_P0_values[i])
@@ -70,18 +80,15 @@ def process_csv_file(csv_file_directory, hs_file_directory, output_file_path):
                     csv_writer.writerow(row_data)
                     outfile.flush()
 
-                print(f"Processed event: {row['EventName']}")
+                print(f"Processed event: {events[0]['EventName']}")
 
         print("All events have been processed and saved to the CSV file.")
 
-
 def main():
-    csv_file_directory = 'C:/Users/luisg/PycharmProjects/BetfairHistoricalDataStreaming/Data/New_test/2H_timestamps.csv'
-    output_file_path = 'C:/Users/luisg/PycharmProjects/BetfairHistoricalDataStreaming/Data/New_test/outputHS_4506345_filtered.csv'
-    hs_file_directory = 'C:/Users/luisg/PycharmProjects/BetfairHistoricalDataStreaming/Data/New_test/HS'
+    network_location = '//NASWDC/Data/Betfair/Soccer/CS'
+    output_file_path = os.path.join(network_location, 'outputCS_1096_filtered.csv')
 
-    process_csv_file(csv_file_directory, hs_file_directory, output_file_path)
-
+    process_txt_files(network_location, output_file_path)
 
 if __name__ == "__main__":
     main()
