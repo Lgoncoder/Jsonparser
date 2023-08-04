@@ -1,5 +1,3 @@
-import os
-import logging
 import logging
 import pandas as pd
 from pathlib import Path
@@ -9,48 +7,73 @@ from betfairlightweight.streaming.stream import MarketStream
 from glob import glob
 import os
 import json
-import betfairlightweight
-from betfairlightweight import StreamListener
+import shutil
 
-# setup logging
-logging.basicConfig(level=logging.INFO)
 
-# create trading instance (don't need username/password)
-trading = betfairlightweight.APIClient("username", "password")
+p = Path(r'C:/Users/luisg/PycharmProjects/BetfairHistoricalDataStreaming/Betfair_data')
+filenames = p.glob('*.*')
 
-# create listener
-listener = StreamListener(max_latency=None)
+for f in filenames:
 
-# specify the directory where your json files are located
-directory_path = r"C:\Users\luisg\PycharmProjects\BetfairHistoricalDataStreaming\Betfair_data\TestCS"
+    """
+    Data needs to be downloaded from:
+        https://historicdata.betfair.com
+    """
 
-# get a list of all the files in the directory
-all_files = os.listdir(directory_path)
+    # setup logging
+    logging.basicConfig(level=logging.INFO)
 
-# filter the list for only .json files
-json_files = [file for file in all_files if file.endswith('.json')]
+    # create trading instance (no need to put in correct details)
+    trading = betfairlightweight.APIClient('username', 'password')
 
-# loop through each file in the directory
-for file_name in json_files:
 
-    # create a full file path by joining the directory path and file name
-    full_file_path = os.path.join(directory_path, file_name)
+    class HistoricalStream(MarketStream):
+        # create custom listener and stream
 
-    # create historical stream (update file_path to your file location)
-    stream = trading.streaming.create_historical_generator_stream(
-        file_path=full_file_path,
-        listener=listener,
+        def __init__(self, listener):
+            super(HistoricalStream, self).__init__(listener)
+            with open('C:/Users/luisg/PycharmProjects/BetfairHistoricalDataStreaming/Betfair_data/output.txt', 'w') as output:
+                output.write('Time,MarketId,Status,Inplay,SelectionId,RunnerStatus,LastPriceTraded\n')
+
+        def on_process(self, market_books):
+            with open('C:/Users/luisg/PycharmProjects/BetfairHistoricalDataStreaming/Betfair_data/output.txt', 'a') as output:
+                for market_book in market_books:
+                    for runner in market_book.runners:
+
+                        # how to get runner details from the market definition
+                        market_def = market_book.market_definition
+                        runners_dict = {(runner.selection_id, runner.handicap): runner for runner in market_def.runners}
+                        runner_def = runners_dict.get(
+                            (runner.selection_id, runner.status)
+                        )
+
+                        output.write('%s,%s,%s,%s,%s,%s,%s\n' % (
+                            market_book.publish_time, market_book.market_id, market_book.status, market_book.inplay,
+                            runner.selection_id, runner.status, runner.last_price_traded or ''
+                        ))
+
+    class HistoricalListener(StreamListener):
+        def _add_stream(self, unique_id, stream_type):
+            if stream_type == 'marketSubscription':
+                return HistoricalStream(self)
+
+
+    # create listener
+    listener = HistoricalListener(
+        max_latency=1e100
     )
 
-    # create generator
-    gen = stream.get_generator()
+    # create historical stream, update directory to file location
+    stream = trading.streaming.create_historical_stream(
+        file_path=f,
+        listener=listener
+    )
 
-    # print marketBooks
-    for market_books in gen():
-        for market_book in market_books:
-            print(market_book)
+    # start stream
+    # stream.start(async_=False)
+    stream.start()
 
-    with open(file_name, 'r') as file:
+    with open(f, 'r') as file:
         first_line = file.readline()
         for last_line in file:
             pass
@@ -73,8 +96,7 @@ for file_name in json_files:
             country = data['mc'][0]['marketDefinition']['countryCode']
         except:
             country = 'NA'
-        df = pd.read_csv(
-            'C:/Users/luisg/PycharmProjects/BetfairHistoricalDataStreaming/Betfair_data/TestCS/output.txt')
+        df = pd.read_csv('C:/Users/luisg/PycharmProjects/BetfairHistoricalDataStreaming/Data/allfiles/allevents/output.txt')
         df.SelectionId.replace(home, '1096', inplace=True)
         df.SelectionId.replace(away, 48351, inplace=True)
         df['eventId'] = eventId
@@ -88,15 +110,14 @@ for file_name in json_files:
         # if df.marketName[1] == 'Match Odds':
         term = "MO"
 
-        df.to_csv('C:/Users/luisg/PycharmProjects/BetfairHistoricalDataStreaming/Betfair_data/TestCS/output.txt',
-                  index=False)
+        df.to_csv('C:/Users/luisg/PycharmProjects/BetfairHistoricalDataStreaming/Data/allfiles/allevents/output.txt', index=False)
 
         # Saves file with the same original name
         s_temp = os.path.splitext(f)[1]
         saux = s_temp[1:]
         s = term + saux
-        os.rename(r'C:/Users/luisg/PycharmProjects/BetfairHistoricalDataStreaming/Betfair_data/TestCS/output.txt',
-                  r'C:/Users/luisg/PycharmProjects/BetfairHistoricalDataStreaming/Betfair_data/TestCS/%s.txt' % s)
+        os.rename(r'C:/Users/luisg/PycharmProjects/BetfairHistoricalDataStreaming/Data/allfiles/allevents/output.txt',
+                  r'C:/Users/luisg/PycharmProjects/BetfairHistoricalDataStreaming/Data/allfiles/allevents/%s.txt' % s)
 
     elif data['mc'][0]['marketDefinition']['marketType'] == 'CORRECT_SCORE':
         home = data['mc'][0]['marketDefinition']['runners'][0]['id']
@@ -112,8 +133,8 @@ for file_name in json_files:
             country = 'NA'
         timezone = data['mc'][0]['marketDefinition']['timezone']
 
-        df = pd.read_csv(
-            'C:/Users/luisg/PycharmProjects/BetfairHistoricalDataStreaming/Data/allfiles/allevents/output.txt')
+
+        df = pd.read_csv('C:/Users/luisg/PycharmProjects/BetfairHistoricalDataStreaming/Data/allfiles/allevents/output.txt')
         df.SelectionId.replace(home, '1096', inplace=True)
         df.SelectionId.replace(away, 48351, inplace=True)
         df['eventId'] = eventId
@@ -126,15 +147,14 @@ for file_name in json_files:
 
         term = "CS"
 
-        df.to_csv('C:/Users/luisg/PycharmProjects/BetfairHistoricalDataStreaming/Betfair_data/TestCS/output.txt',
-                  index=False)
+        df.to_csv('C:/Users/luisg/PycharmProjects/BetfairHistoricalDataStreaming/Data/allfiles/allevents/output.txt', index=False)
 
         # Saves file with the same original name
         s_temp = os.path.splitext(f)[1]
         saux = s_temp[1:]
         s = term + saux
-        os.rename(r'C:/Users/luisg/PycharmProjects/BetfairHistoricalDataStreaming/Betfair_data/TestCS/output.txt',
-                  r'C:/Users/luisg/PycharmProjects/BetfairHistoricalDataStreaming/Betfair_data/TestCS/%s.txt' % s)
+        os.rename(r'C:/Users/luisg/PycharmProjects/BetfairHistoricalDataStreaming/Data/allfiles/allevents/output.txt',
+                  r'C:/Users/luisg/PycharmProjects/BetfairHistoricalDataStreaming/Data/allfiles/allevents/%s.txt' % s)
 
     elif data['mc'][0]['marketDefinition']['marketType'] == 'HALF_TIME_SCORE':
         home = data['mc'][0]['marketDefinition']['runners'][0]['id']
@@ -150,8 +170,7 @@ for file_name in json_files:
             country = 'NA'
         timezone = data['mc'][0]['marketDefinition']['timezone']
 
-        df = pd.read_csv(
-            'C:/Users/luisg/PycharmProjects/BetfairHistoricalDataStreaming/Betfair_data/TestCS/output.txt')
+        df = pd.read_csv('C:/Users/luisg/PycharmProjects/BetfairHistoricalDataStreaming/Data/allfiles/allevents/output.txt')
         df.SelectionId.replace(home, '1096', inplace=True)
         df.SelectionId.replace(away, 48351, inplace=True)
         df['eventId'] = eventId
@@ -164,15 +183,14 @@ for file_name in json_files:
 
         term = "HS"
 
-        df.to_csv('C:/Users/luisg/PycharmProjects/BetfairHistoricalDataStreaming/Betfair_data/TestCS/output.txt',
-                  index=False)
+        df.to_csv('C:/Users/luisg/PycharmProjects/BetfairHistoricalDataStreaming/Data/allfiles/allevents/output.txt', index=False)
 
         # Saves file with the same original name
         s_temp = os.path.splitext(f)[1]
         saux = s_temp[1:]
         s = term + saux
-        os.rename(r'C:/Users/luisg/PycharmProjects/BetfairHistoricalDataStreaming/Betfair_data/TestCS/output.txt',
-                  r'C:/Users/luisg/PycharmProjects/BetfairHistoricalDataStreaming/Betfair_data/TestCS/%s.txt' % s)
+        os.rename(r'C:/Users/luisg/PycharmProjects/BetfairHistoricalDataStreaming/Data/allfiles/allevents/output.txt',
+                  r'C:/Users/luisg/PycharmProjects/BetfairHistoricalDataStreaming/Data/allfiles/allevents/%s.txt' % s)
 
     elif data['mc'][0]['marketDefinition']['marketType'] == 'HALF_TIME':
         home = data['mc'][0]['marketDefinition']['runners'][0]['id']
@@ -188,8 +206,8 @@ for file_name in json_files:
             country = 'NA'
         timezone = data['mc'][0]['marketDefinition']['timezone']
 
-        df = pd.read_csv(
-            'C:/Users/luisg/PycharmProjects/BetfairHistoricalDataStreaming/Betfair_data/TestCS/output.txt')
+
+        df = pd.read_csv('C:/Users/luisg/PycharmProjects/BetfairHistoricalDataStreaming/Data/allfiles/allevents/output.txt')
         df.SelectionId.replace(home, '1096', inplace=True)
         df.SelectionId.replace(away, 48351, inplace=True)
         df['eventId'] = eventId
@@ -202,13 +220,12 @@ for file_name in json_files:
 
         term = "HT"
 
-        df.to_csv('C:/Users/luisg/PycharmProjects/BetfairHistoricalDataStreaming/Betfair_data/TestCS/output.txt',
-                  index=False)
+        df.to_csv('C:/Users/luisg/PycharmProjects/BetfairHistoricalDataStreaming/Data/allfiles/allevents/output.txt', index=False)
 
         # Saves file with the same original name
         s_temp = os.path.splitext(f)[1]
         saux = s_temp[1:]
         s = term + saux
-        os.rename(r'C:/Users/luisg/PycharmProjects/BetfairHistoricalDataStreaming/Betfair_data/TestCS/output.txt',
-                  r'C:/Users/luisg/PycharmProjects/BetfairHistoricalDataStreaming/Betfair_data/TestCS/%s.txt' % s)
+        os.rename(r'C:/Users/luisg/PycharmProjects/BetfairHistoricalDataStreaming/Data/allfiles/allevents/output.txt',
+                  r'C:/Users/luisg/PycharmProjects/BetfairHistoricalDataStreaming/Data/allfiles/allevents/%s.txt' % s)
 
