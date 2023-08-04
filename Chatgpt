@@ -63,6 +63,8 @@ def main():
             file_path = os.path.join(network_location, file_name)
             event_data = process_file(file_path)
 
+            print(event_data)  # Add this line to check the data after processing
+
             if len(event_data['Back_P0']) >= 10 and len(event_data['Lay_P0']) >= 10:
                 while np.var(event_data['Back_P0']) >= variance_threshold or np.var(event_data['Lay_P0']) >= variance_threshold:
                     event_data['Back_P0'].pop(0)
