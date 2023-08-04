@@ -1,80 +1,95 @@
 import os
 import csv
-from collections import defaultdict
+import statistics
 
-def create_folder_if_not_exists(folder):
-    if not os.path.exists(folder):
-        os.makedirs(folder)
+network_location = '//NASWDC/Data/Betfair/Soccer/Test'
+output_file = '//NASWDC/Data/Betfair/Soccer/Test/output.csv'
 
-def process_files(data_path, output_file_path):
-    # Create a dictionary to store the TradedVolume for each SelectionId in each file
-    selection_ids_data = defaultdict(lambda: defaultdict(float))
+def process_file(file_path):
+    with open(file_path, 'r') as file:
+        reader = csv.DictReader(file)
+        event_data = {
+            'CS_File': os.path.basename(file_path),
+            'eventId': None,
+            'EventName': None,
+            'SelectionId': None,
+            'Back_P0': [],
+            'Lay_P0': []
+        }
 
-    # Loop through each file in the directory
-    for filename in os.listdir(data_path):
-        file_path = os.path.join(data_path, filename)
+        for line in reader:
+            if line['SelectionId'] == '1096' and line['Inplay'] == 'True':
+                event_data['eventId'] = line['eventId']
+                event_data['EventName'] = line['eventName']
+                event_data['SelectionId'] = line['SelectionId']
+                back_p0 = float(line['back_P0'])
+                lay_p0 = float(line['lay_P0'])
+                event_data['Back_P0'].append(back_p0)
+                event_data['Lay_P0'].append(lay_p0)
 
-        # Skip directories and only process text files
-        if not os.path.isfile(file_path) or not filename.endswith('.txt'):
-            continue
+                if len(event_data['Back_P0']) == 10:
+                    variance_back_p0 = statistics.variance(event_data['Back_P0'])
+                    variance_lay_p0 = statistics.variance(event_data['Lay_P0'])
 
-        # Read the text file
-        with open(file_path, 'r') as file:
-            lines = file.readlines()
+                    if variance_back_p0 < 0.05 and variance_lay_p0 < 0.05:
+                        return {
+                            'CS_File': event_data['CS_File'],
+                            'eventId': event_data['eventId'],
+                            'EventName': event_data['EventName'],
+                            'SelectionId': event_data['SelectionId'],
+                            'Back_P0_1': event_data['Back_P0'][0],
+                            'Lay_P0_1': event_data['Lay_P0'][0],
+                            'Back_P0_2': event_data['Back_P0'][1],
+                            'Lay_P0_2': event_data['Lay_P0'][1],
+                            'Back_P0_3': event_data['Back_P0'][2],
+                            'Lay_P0_3': event_data['Lay_P0'][2],
+                            'Back_P0_4': event_data['Back_P0'][3],
+                            'Lay_P0_4': event_data['Lay_P0'][3],
+                            'Back_P0_5': event_data['Back_P0'][4],
+                            'Lay_P0_5': event_data['Lay_P0'][4],
+                            'Back_P0_6': event_data['Back_P0'][5],
+                            'Lay_P0_6': event_data['Lay_P0'][5],
+                            'Back_P0_7': event_data['Back_P0'][6],
+                            'Lay_P0_7': event_data['Lay_P0'][6],
+                            'Back_P0_8': event_data['Back_P0'][7],
+                            'Lay_P0_8': event_data['Lay_P0'][7],
+                            'Back_P0_9': event_data['Back_P0'][8],
+                            'Lay_P0_9': event_data['Lay_P0'][8],
+                            'Back_P0_10': event_data['Back_P0'][9],
+                            'Lay_P0_10': event_data['Lay_P0'][9]
+                        }
+                    else:
+                        event_data['Back_P0'] = event_data['Back_P0'][1:]
+                        event_data['Lay_P0'] = event_data['Lay_P0'][1:]
 
-            # Get the header line and split it to get the field names
-            header_line = lines[0].strip()
-            fieldnames = header_line.split(',')
+        return None
 
-            for line in lines[1:]:
-                line = line.strip()
-                fields = line.split(',')
+def write_output(output_data):
+    with open(output_file, 'w', newline='') as csvfile:
+        fieldnames = ['CS_File', 'eventId', 'EventName', 'SelectionId',
+                      'Back_P0_1', 'Lay_P0_1', 'Back_P0_2', 'Lay_P0_2',
+                      'Back_P0_3', 'Lay_P0_3', 'Back_P0_4', 'Lay_P0_4',
+                      'Back_P0_5', 'Lay_P0_5', 'Back_P0_6', 'Lay_P0_6',
+                      'Back_P0_7', 'Lay_P0_7', 'Back_P0_8', 'Lay_P0_8',
+                      'Back_P0_9', 'Lay_P0_9', 'Back_P0_10', 'Lay_P0_10']
+        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
 
-                selection_id_index = fieldnames.index('SelectionId')
-                inplay_index = fieldnames.index('Inplay')
-                traded_volume_index = fieldnames.index('TradedVolume')
-                event_id_index = fieldnames.index('eventId')
-                event_name_index = fieldnames.index('eventName')
-
-                selection_id = fields[selection_id_index]
-                inplay = fields[inplay_index]
-                traded_volume = float(fields[traded_volume_index])
-                event_id = fields[event_id_index]
-                event_name = fields[event_name_index]
-
-                # Check if Inplay is False and add the TradedVolume to the corresponding SelectionId
-                if inplay == 'False':
-                    selection_ids_data[filename][selection_id] += traded_volume
-                    # Store eventId and eventName for each file (assuming they are the same for all rows in the file)
-                    selection_ids_data[filename]['eventId'] = event_id
-                    selection_ids_data[filename]['eventName'] = event_name
-
-        print(f"Processed file: {filename}")
-
-    # Write the data to the output file
-    with open(output_file_path, 'w', newline='') as outfile:
-        csv_writer = csv.writer(outfile)
-
-        # Write the header row
-        header = ['eventId', 'eventName', 'FileName'] + sorted(set(selection_ids_data[filename].keys()) - {'eventId', 'eventName'})
-        csv_writer.writerow(header)
-
-        # Write the data rows
-        for filename, selection_data in selection_ids_data.items():
-            event_id = selection_data['eventId']
-            event_name = selection_data['eventName']
-            file_data = [event_id, event_name, filename]
-            for selection_id in sorted(set(selection_data.keys()) - {'eventId', 'eventName'}):
-                file_data.append(str(selection_data[selection_id]))
-            csv_writer.writerow(file_data)
-
-    print("All files have been processed and saved to the CSV file.")
+        writer.writeheader()
+        for data in output_data:
+            writer.writerow(data)
 
 def main():
-    network_location = '//NASWDC/Data/Betfair/Soccer/MO'
-    output_file_path = os.path.join(network_location, 'ALL_outputMO_tradedVolume.csv')
+    output_data = []
 
-    process_files(network_location, output_file_path)
+    for file_name in os.listdir(network_location):
+        if file_name.startswith('CS') and file_name.endswith('.txt'):
+            file_path = os.path.join(network_location, file_name)
+            event_data = process_file(file_path)
+
+            if event_data:
+                output_data.append(event_data)
+
+    write_output(output_data)
 
 if __name__ == "__main__":
     main()
