@@ -1,0 +1,127 @@
+import os
+import json
+import csv
+from betfairlightweight import StreamListener
+from betfairlightweight.streaming.betfairstream import BetfairStream
+from betfairlightweight.streaming.stream import MarketStream
+from collections import defaultdict
+
+class CustomMarketStream(MarketStream):
+    _lookup = 'mcm'
+
+    def __init__(self, listener, unique_id: int):
+        super(CustomMarketStream, self).__init__(listener, unique_id)
+        self.market_states = {}
+
+    def on_subscribe(self, market_filter: dict) -> None:
+        super().on_subscribe(market_filter)
+        self.market_states = {}
+
+    def _process(self, data: dict) -> None:
+        market_id = data['id']
+        publish_time = data['pt']
+        market_change = data['mc'][0]  # assuming only one market_change per update
+
+        if market_id not in self.market_states:
+            # Initialize market state with empty runners
+            self.market_states[market_id] = {'runners': defaultdict(dict)}
+
+        market_state = self.market_states[market_id]
+
+        # Update market state
+        for key in ('marketDefinition', 'rc'):
+            if key in market_change:
+                market_state[key] = market_change[key]
+
+        # Update runners
+        for runner_change in market_change.get('rc', []):
+            runner_id = runner_change['id']
+            for key in ('ltp', 'tv'):
+                if key in runner_change:
+                    market_state['runners'][runner_id][key] = runner_change[key]
+
+        # Maintain the publish time for each market update
+        market_state['publish_time'] = publish_time
+
+
+def parse_stream(json_files):
+    listener = StreamListener()
+    for file in json_files:
+        print(f"Parsing file {file}")
+        with open(file) as json_data:
+            for line in json_data:
+                stream = json.loads(line)
+                listener.on_data(stream)
+                print(f"Parsed line from {file}")
+
+    print("Finished parsing files")
+    return listener
+
+def _process(self, data: dict) -> None:
+    market_id = data['id']
+    publish_time = data['pt']
+    market_change = data['mc'][0]  # assuming only one market_change per update
+
+    if market_id not in self.market_states:
+        # Initialize market state with empty runners
+        self.market_states[market_id] = {'runners': defaultdict(dict)}
+
+    market_state = self.market_states[market_id]
+
+    # Update market state
+    for key in ('marketDefinition', 'rc'):
+        if key in market_change:
+            market_state[key] = market_change[key]
+
+    # Update runners
+    for runner_change in market_change.get('rc', []):
+        runner_id = runner_change['id']
+        for key in ('ltp', 'tv'):
+            if key in runner_change:
+                market_state['runners'][runner_id][key] = runner_change[key]
+
+    # Maintain the publish time for each market update
+    market_state['publish_time'] = publish_time
+
+    # Debug print statement
+    print(f"Market state for {market_id}: {market_state}")
+
+def main():
+    input_folder = r"C:\Users\luisg\PycharmProjects\BetfairHistoricalDataStreaming\Betfair_data\TestCS"
+    output_folder = r"C:\Users\luisg\PycharmProjects\BetfairHistoricalDataStreaming\Betfair_data\TestCS\csv_files"
+
+    json_files = glob.glob(os.path.join('Betfair_data', 'TestCS', '*.json'))
+    print(f"Found {len(json_files)} JSON files")
+    listener = parse_stream(json_files)
+    print("Parsed all JSON files")
+    for market_id, market_state in listener.market_states.items():
+        print(f"Processing market {market_id}")
+        process_market_state(market_id, market_state)
+        print(f"Processed market {market_id}")
+    print("Processed all market states")
+
+
+    json_files = [os.path.join(input_folder, file) for file in os.listdir(input_folder) if file.endswith('.json')]
+    market_stream = parse_stream(json_files)
+
+
+
+
+    # Write the state of each market to a CSV file
+    for market_id, market_state in market_stream.market_states.items():
+        output_file = os.path.join(output_folder, f"{market_id}.csv")
+        with open(output_file, 'w') as f:
+            writer = csv.DictWriter(f, fieldnames=['PublishTime', 'SelectionId', 'LastPriceTraded', 'TradedVolume'])
+            writer.writeheader()
+            for selection_id, state in market_state['runners'].items():
+                row = {
+                    'PublishTime': market_state['publish_time'],
+                    'SelectionId': selection_id,
+                    'LastPriceTraded': state.get('ltp'),
+                    'TradedVolume': state.get('tv')
+                }
+                writer.writerow(row)
+
+
+if __name__ == "__main__":
+    main()
