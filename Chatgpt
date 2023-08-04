@@ -31,7 +31,8 @@ for f in filenames:
         # create custom listener and stream
 
         def __init__(self, listener):
-            super(HistoricalStream, self).__init__(listener)
+            hardcoded_unique_id = "XPTO"
+            super(HistoricalStream, self).__init__(listener, hardcoded_unique_id)
             with open('C:/Users/luisg/PycharmProjects/BetfairHistoricalDataStreaming/Betfair_data/output.txt', 'w') as output:
                 output.write('Time,MarketId,Status,Inplay,SelectionId,RunnerStatus,LastPriceTraded\n')
 
